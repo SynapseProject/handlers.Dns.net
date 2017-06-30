@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace handlers.Dns.net
 {
-    public class Class1
+    public partial class Dns
     {
     }
 }
