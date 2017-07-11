@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Management;
 using System.Net.NetworkInformation;
 
@@ -6,19 +7,101 @@ namespace handlers.Dns.net
 {
     public partial class DnsServices
     {
-        public static void CreateARecord(string dnsZone, string hostName, string ipAddress, string dnsServerName = ".", bool isDryRun = false)
+        public static void CreateARecord(string hostname, string ipAddress, string dnsZone = "", string dnsServerName = ".", bool isDryRun = false)
         {
-            ManagementScope mgmtScope = new ManagementScope( @"\\.\Root\MicrosoftDNS" );
+            if ( string.IsNullOrWhiteSpace( hostname ) )
+            {
+                throw new Exception( "Fully qualified host name is not specified." );
+            }
 
-            ManagementClass mgmtClass = new ManagementClass( mgmtScope, new ManagementPath( "MicrosoftDNS_AType" ), null );
+            if ( string.IsNullOrWhiteSpace( ipAddress ) )
+            {
+                throw new Exception( "IP address is not specified." );
+            }
 
-            ManagementBaseObject mgmtParams = mgmtClass.GetMethodParameters( "CreateInstanceFromPropertyData" );
-            mgmtParams["DnsServerName"] = Environment.MachineName;
-            mgmtParams["ContainerName"] = dnsZone;
-            mgmtParams["OwnerName"] = $"{hostName.ToLower()}.{dnsZone}";
-            mgmtParams["IPAddress"] = ipAddress;
+            if ( string.IsNullOrWhiteSpace( dnsZone ) )
+            {
+                dnsZone = GetJoinedDomainName();
+            }
 
-            mgmtClass.InvokeMethod( "CreateInstanceFromPropertyData", mgmtParams, null );
+            try
+            {
+                ManagementScope mgmtScope = new ManagementScope( @"\\" + dnsServerName + "\\root\\MicrosoftDNS" );
+
+                ManagementClass mgmtClass = new ManagementClass( mgmtScope, new ManagementPath( "MicrosoftDNS_AType" ), null );
+
+                ManagementBaseObject mgmtParams = mgmtClass.GetMethodParameters( "CreateInstanceFromPropertyData" );
+                mgmtParams["ContainerName"] = dnsZone;
+                mgmtParams["OwnerName"] = $"{hostname.ToLower()}";
+                mgmtParams["IPAddress"] = ipAddress;
+
+                if ( !isDryRun )
+                {
+                    mgmtClass.InvokeMethod( "CreateInstanceFromPropertyData", mgmtParams, null );
+                }
+            }
+            catch ( Exception ex )
+            {
+                throw new Exception( ex.Message );
+            }
+        }
+
+        public static void CreatePtrRecord(string hostname, string ipAddress, string dnsZone, string dnsServerName = ".", bool isDryRun = false)
+        {
+            if ( string.IsNullOrWhiteSpace( hostname ) )
+            {
+                throw new Exception( "Fully qualified host name is not specified." );
+            }
+
+            if ( string.IsNullOrWhiteSpace( ipAddress ) )
+            {
+                throw new Exception( "IP address is not specified." );
+            }
+
+            if ( string.IsNullOrWhiteSpace( dnsZone ) )
+            {
+                throw new Exception( "DNS zone is not specified." );
+            }
+
+            try
+            {
+                ManagementScope mgmtScope = new ManagementScope( @"\\" + dnsServerName + "\\root\\MicrosoftDNS" );
+
+                ManagementClass mgmtClass = new ManagementClass( mgmtScope, new ManagementPath( "MicrosoftDNS_PTRType" ), null );
+
+                ManagementBaseObject mgmtParams = mgmtClass.GetMethodParameters( "CreateInstanceFromPropertyData" );
+
+                mgmtParams["ContainerName"] = dnsZone;
+                mgmtParams["OwnerName"] = $"{ReverseIpAddress( ipAddress )}.in-addr.arpa";
+                mgmtParams["PTRDomainName"] = hostname;
+
+                if ( !isDryRun )
+                {
+                    mgmtClass.InvokeMethod( "CreateInstanceFromPropertyData", mgmtParams, null );
+                }
+            }
+            catch ( Exception ex )
+            {
+                throw new Exception( ex.Message );
+            }
+        }
+
+        public static ManagementObjectCollection QueryDnsRecord(string queryStatement, string dnsServerName = ".")
+        {
+            ManagementObjectCollection col = null;
+            ObjectQuery query = new ObjectQuery( queryStatement );
+            ManagementScope scope = new ManagementScope( @"\\" + dnsServerName + "\\root\\MicrosoftDNS" );
+            scope.Connect();
+            ManagementObjectSearcher s = new ManagementObjectSearcher( scope, query );
+            try
+            {
+                col = s.Get();
+            }
+            catch ( Exception ex )
+            {
+                Console.WriteLine( ex.Message );
+            }
+            return col;
         }
 
         public static string GetJoinedDomainName()
@@ -26,26 +109,16 @@ namespace handlers.Dns.net
             return IPGlobalProperties.GetIPGlobalProperties().DomainName;
         }
 
-        public static void DeleteARecord(string aRecordName, string dnsServerName = ".", string dnsZone = "", bool isDryRun = false)
+        public static void DeleteARecord(string hostname, string dnsServerName = ".", bool isDryRun = false)
         {
-            if ( string.IsNullOrWhiteSpace( aRecordName ) )
+            if ( string.IsNullOrWhiteSpace( hostname ) )
             {
-                throw new Exception( "A record name is not specified.");
-            }
-
-            if ( string.IsNullOrWhiteSpace( dnsServerName ) )
-            {
-                throw new Exception( "DNS server name is not specified.");
-            }
-
-            if ( string.IsNullOrWhiteSpace( dnsServerName ) )
-            {
-                dnsZone = GetJoinedDomainName();
+                throw new Exception( "Fully qualified host name is not specified." );
             }
 
             try
             {
-                ObjectQuery query = new ObjectQuery( $"SELECT * FROM MicrosoftDNS_AType WHERE OwnerName = '{aRecordName}.{dnsZone}'" );
+                ObjectQuery query = new ObjectQuery( $"SELECT * FROM MicrosoftDNS_AType WHERE OwnerName = '{hostname}'" );
                 ManagementScope scope = new ManagementScope( @"\\" + dnsServerName + "\\root\\MicrosoftDNS" );
                 scope.Connect();
                 ManagementObjectSearcher s = new ManagementObjectSearcher( scope, query );
@@ -61,33 +134,37 @@ namespace handlers.Dns.net
                         }
                     }
                 }
+                else
+                {
+                    throw new Exception( "DNS A record is not found." );
+                }
             }
             catch ( Exception ex )
             {
-                throw new Exception( $"Encountered exception while trying to delete A record: {ex.Message}" );
+                throw new Exception( ex.Message );
             }
         }
 
-        public static void DeletePtrRecord(string ipAddress, string dnsServerName = ".", string dnsZone = "", bool isDryRun = false)
+        public static void DeletePtrRecord(string hostname, string ipAddress, string dnsServerName = ".", bool isDryRun = false)
         {
+            if ( string.IsNullOrWhiteSpace( hostname ) )
+            {
+                throw new Exception( "Fully qualified host name is not specified." );
+            }
+
             if ( string.IsNullOrWhiteSpace( ipAddress ) )
             {
-                throw new Exception( "IP address is not specified.");
+                throw new Exception( "IP address is not specified." );
             }
 
             if ( string.IsNullOrWhiteSpace( dnsServerName ) )
             {
-                throw new Exception( "DNS server name is not specified.");
-            }
-
-            if ( string.IsNullOrWhiteSpace( dnsServerName ) )
-            {
-                dnsZone = GetJoinedDomainName();
+                throw new Exception( "DNS server name is not specified." );
             }
 
             try
             {
-                ObjectQuery query = new ObjectQuery( $"SELECT * FROM MicrosoftDNS_PTRType WHERE OwnerName LIKE '{ipAddress}%'" );
+                ObjectQuery query = new ObjectQuery( $"SELECT * FROM MicrosoftDNS_PTRType WHERE OwnerName = '{ReverseIpAddress( ipAddress )}.in-addr.arpa' AND PTRDomainName = '{hostname}.'" );
                 ManagementScope scope = new ManagementScope( @"\\" + dnsServerName + "\\root\\MicrosoftDNS" );
                 scope.Connect();
                 ManagementObjectSearcher s = new ManagementObjectSearcher( scope, query );
@@ -103,12 +180,30 @@ namespace handlers.Dns.net
                         }
                     }
                 }
+                else
+                {
+                    throw new Exception( "DNS PTR record is not found." );
+                }
             }
             catch ( Exception ex )
             {
-                throw new Exception( $"Encountered exception while trying to delete PTR record: {ex.Message}" );
+                throw new Exception( ex.Message );
             }
         }
 
+        public static bool IsExistingARecord()
+        {
+            return true;
+        }
+
+        public static bool IsExistingPtrRecord()
+        {
+            return true;
+        }
+
+        public static string ReverseIpAddress(string s)
+        {
+            return string.Join( ".", s.Split( '.' ).Reverse() );
+        }
     }
 }

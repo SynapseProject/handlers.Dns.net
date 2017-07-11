@@ -53,9 +53,16 @@
   <ItemGroup>
     <Compile Include="DnsTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Utility.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Synapse.Dns.Core\Synapse.Dns.Core.csproj">
+      <Project>{a0639cc6-cc99-4b58-95c4-a134b9ccddb5}</Project>
+      <Name>Synapse.Dns.Core</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VSToolsPath)\TeamTest\Microsoft.TestTools.targets" Condition="Exists('$(VSToolsPath)\TeamTest\Microsoft.TestTools.targets')" />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
