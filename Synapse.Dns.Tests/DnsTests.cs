@@ -1,5 +1,5 @@
 ﻿using System;
-using handlers.Dns.net;
+using Synapse.Dns.Core;
 using NUnit.Framework;
 
 namespace Synapse.Dns.Tests
@@ -72,15 +72,19 @@ namespace Synapse.Dns.Tests
         {
             // Arrange 
             string hostname = Utility.GenerateToken( 8 ) + "." + DnsServices.GetJoinedDomainName();
-            string ipAddress = "10.2.0.99"; // TODO: Generate dynamic address
+            string ipAddress = Utility.GetRandomIpAddress();
             string dnsServerName = ".";
             string dnsZone = DnsServices.GetJoinedDomainName();
 
             // Act
-
+            DnsServices.CreateARecord( hostname, ipAddress, dnsZone, dnsServerName );
 
             // Assert
-            Assert.DoesNotThrow( () => DnsServices.CreateARecord( hostname, ipAddress, dnsZone, dnsServerName ) );
+            Assert.IsTrue(DnsServices.IsExistingARecord(hostname, ipAddress));
+
+            // Cleanup
+            DnsServices.DeleteARecord(hostname, ipAddress);
+
         }
 
 
@@ -169,17 +173,19 @@ namespace Synapse.Dns.Tests
         public void CreatePtrRecord_With_Valid_Details_Succeed()
         {
             // Arrange 
-            // Arrange 
             string hostname = $"{Utility.GenerateToken( 8 )}.{DnsServices.GetJoinedDomainName()}";
             string ipAddress = "10.2.0.97";
             string dnsServerName = ".";
             string dnsZone = "0.2.10.in-addr.arpa";
 
             // Act
+            DnsServices.CreatePtrRecord( hostname, ipAddress, dnsZone, dnsServerName );
 
             // Assert
-            Assert.DoesNotThrow( () => DnsServices.CreatePtrRecord( hostname, ipAddress, dnsZone, dnsServerName ));
+            Assert.IsTrue(DnsServices.IsExistingPtrRecord(hostname, ipAddress));
 
+            // Cleanup
+            DnsServices.DeletePtrRecord(hostname, ipAddress);
         }
 
         [Test]
@@ -187,9 +193,10 @@ namespace Synapse.Dns.Tests
         {
             // Arrange 
             string hostname = "";
+            string ipAddress = "";
 
             // Act
-            Exception ex = Assert.Throws<Exception>( () => DnsServices.DeleteARecord( hostname ) );
+            Exception ex = Assert.Throws<Exception>( () => DnsServices.DeleteARecord( hostname, ipAddress ) );
 
             // Assert
             Assert.That( ex.Message, Is.EqualTo( "Fully qualified host name is not specified." ) );
@@ -200,9 +207,10 @@ namespace Synapse.Dns.Tests
         {
             // Arrange 
             string hostname = "XXXXXX";
+            string ipAddress = "";
 
             // Act
-            Exception ex = Assert.Throws<Exception>( () => DnsServices.DeleteARecord( hostname ) );
+            Exception ex = Assert.Throws<Exception>( () => DnsServices.DeleteARecord( hostname, ipAddress ) );
 
             // Assert
             Assert.That( ex.Message, Is.EqualTo( "DNS A record is not found." ) );
@@ -219,9 +227,10 @@ namespace Synapse.Dns.Tests
 
             // Act
             DnsServices.CreateARecord( hostname, ipAddress, dnsZone, dnsServerName );
+            DnsServices.DeleteARecord( hostname, ipAddress );
 
             // Assert
-            Assert.DoesNotThrow( () => DnsServices.DeleteARecord( hostname ) );
+            Assert.IsFalse(DnsServices.IsExistingARecord(hostname, ipAddress));
         }
 
         [Test]
@@ -271,15 +280,16 @@ namespace Synapse.Dns.Tests
         {
             // Arrange 
             string hostname = $"{Utility.GenerateToken( 8 )}.{DnsServices.GetJoinedDomainName()}";
-            string ipAddress = "10.2.0.97";
+            string ipAddress = "10.2.0.97"; // TODO: Generate dynamic ip address
             string dnsServerName = ".";
             string dnsZone = "0.2.10.in-addr.arpa";
 
             // Act
             DnsServices.CreatePtrRecord( hostname, ipAddress, dnsZone, dnsServerName );
-
+            DnsServices.DeletePtrRecord( hostname, ipAddress );
+            
             // Assert
-            Assert.DoesNotThrow( () => DnsServices.DeletePtrRecord( hostname, ipAddress ) );
+            Assert.IsFalse(DnsServices.IsExistingPtrRecord(hostname, ipAddress));
         }
     }
 }

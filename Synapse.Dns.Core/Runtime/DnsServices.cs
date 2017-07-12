@@ -3,7 +3,7 @@ using System.Linq;
 using System.Management;
 using System.Net.NetworkInformation;
 
-namespace handlers.Dns.net
+namespace Synapse.Dns.Core
 {
     public partial class DnsServices
     {
@@ -109,7 +109,7 @@ namespace handlers.Dns.net
             return IPGlobalProperties.GetIPGlobalProperties().DomainName;
         }
 
-        public static void DeleteARecord(string hostname, string dnsServerName = ".", bool isDryRun = false)
+        public static void DeleteARecord(string hostname, string ipAddress, string dnsServerName = ".", bool isDryRun = false)
         {
             if ( string.IsNullOrWhiteSpace( hostname ) )
             {
@@ -118,7 +118,7 @@ namespace handlers.Dns.net
 
             try
             {
-                ObjectQuery query = new ObjectQuery( $"SELECT * FROM MicrosoftDNS_AType WHERE OwnerName = '{hostname}'" );
+                ObjectQuery query = new ObjectQuery( $"SELECT * FROM MicrosoftDNS_AType WHERE OwnerName = '{hostname}' AND IPAddress = '{ipAddress}'" );
                 ManagementScope scope = new ManagementScope( @"\\" + dnsServerName + "\\root\\MicrosoftDNS" );
                 scope.Connect();
                 ManagementObjectSearcher s = new ManagementObjectSearcher( scope, query );
@@ -191,14 +191,20 @@ namespace handlers.Dns.net
             }
         }
 
-        public static bool IsExistingARecord()
+        public static bool IsExistingARecord(string hostname, string ipAddress)
         {
-            return true;
+            string queryStatement = $"SELECT * FROM MicrosoftDNS_AType WHERE OwnerName = '{hostname}' AND IPAddress = '{ipAddress}'";
+            ManagementObjectCollection col = QueryDnsRecord( queryStatement );
+
+            return col.Count > 0;
         }
 
-        public static bool IsExistingPtrRecord()
+        public static bool IsExistingPtrRecord(string hostname, string ipAddress)
         {
-            return true;
+            string queryStatement = $"SELECT * FROM MicrosoftDNS_PTRType WHERE OwnerName = '{ReverseIpAddress( ipAddress )}.in-addr.arpa' AND PTRDomainName = '{hostname}.'";
+            ManagementObjectCollection col = QueryDnsRecord( queryStatement );
+
+            return col.Count > 0;
         }
 
         public static string ReverseIpAddress(string s)
