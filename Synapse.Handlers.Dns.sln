@@ -1,11 +1,13 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
-VisualStudioVersion = 15.0.26430.14
+VisualStudioVersion = 15.0.26430.15
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Synapse.Dns.Core", "Synapse.Dns.Core\Synapse.Dns.Core.csproj", "{A0639CC6-CC99-4B58-95C4-A134B9CCDDB5}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Synapse.Dns.Tests", "Synapse.Dns.Tests\Synapse.Dns.Tests.csproj", "{98D30D2B-73D9-4829-B388-7B07421151DF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Synapse.Handlers.DNS", "Synapse.Handlers.DNS\Synapse.Handlers.DNS.csproj", "{532FE4B4-C913-40B3-A343-8910DA407F5B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -21,6 +23,10 @@ Global
 		{98D30D2B-73D9-4829-B388-7B07421151DF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{98D30D2B-73D9-4829-B388-7B07421151DF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{98D30D2B-73D9-4829-B388-7B07421151DF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{532FE4B4-C913-40B3-A343-8910DA407F5B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{532FE4B4-C913-40B3-A343-8910DA407F5B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{532FE4B4-C913-40B3-A343-8910DA407F5B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{532FE4B4-C913-40B3-A343-8910DA407F5B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
