@@ -89,7 +89,7 @@ public class DnsHandler : HandlerRuntimeBase
                 {
                     try
                     {
-                        OnLogMessage( "Verifying request parameters...", LogLevel.Info );
+                        OnLogMessage( "Verifying request parameters...", LogLevel.Info, true );
                         OnLogMessage( request.ToString(), LogLevel.Info );
                         if ( AreActionParametersValid( request ) )
                         {
@@ -211,11 +211,16 @@ public class DnsHandler : HandlerRuntimeBase
         return noError;
     }
 
-    private void OnLogMessage(string message, LogLevel logLevel)
+    private void OnLogMessage(string message, LogLevel logLevel, bool resetMessage = false)
     {
         if ( string.IsNullOrWhiteSpace( message ) )
         {
             return;
+        }
+
+        if ( resetMessage )
+        {
+            _progressMsg = "";
         }
 
         if ( logLevel == LogLevel.Debug )
