@@ -3,18 +3,21 @@ using Synapse.Core;
 using Synapse.Dns.Core;
 using System;
 using System.Collections.Generic;
+using NLog;
 using Synapse.Handlers.DNS;
+using LogLevel = NLog.LogLevel;
 
 public class DnsHandler : HandlerRuntimeBase
 {
+    private static Logger _logger = LogManager.GetCurrentClassLogger();
     private DnsHandlerConfig _config;
-    private ExecuteResult _result = new ExecuteResult()
+    private readonly ExecuteResult _result = new ExecuteResult()
     {
-        Status = StatusType.Running,
+        Status = StatusType.None,
+        BranchStatus = StatusType.None,
         Sequence = int.MaxValue
     };
-    private string _mainProgressMsg = "";
-    private string _subProgressMsg = "";
+    private string _progressMsg = "";
 
     public override object GetConfigInstance()
     {
@@ -36,7 +39,7 @@ public class DnsHandler : HandlerRuntimeBase
                     Action = "delete",
                     Hostname = "FullQualifiedDomainName.com",
                     IpAddress = "xxx.xxx.xxx.xxx",
-                    Note = "Notes related to teh request.",
+                    Note = "Notes related to the request.",
                     RecordType = "AType",
                     RequestOwner = "XXXXXX"
                 },
@@ -45,7 +48,7 @@ public class DnsHandler : HandlerRuntimeBase
                     Action = "delete",
                     Hostname = "FullQualifiedDomainName.com",
                     IpAddress = "xxx.xxx.xxx.xxx",
-                    Note = "Notes related to teh request.",
+                    Note = "Notes related to the request.",
                     RecordType = "PTRType",
                     RequestOwner = "XXXXXX"
                 },
@@ -68,33 +71,35 @@ public class DnsHandler : HandlerRuntimeBase
         Exception exception = null;
         DnsResponse response = new DnsResponse
         {
-            Status = "",
             Results = new List<ActionResult>()
         };
 
 
         try
         {
-            _mainProgressMsg = _mainProgressMsg + "Deserializing incoming request parameters...\n";
+            OnLogMessage( "Deserializing incoming request...", LogLevel.Info );
+            _result.Status = StatusType.Initializing;
             DnsRequest parms = DeserializeOrNew<DnsRequest>( startInfo.Parameters );
 
+            _result.Status = StatusType.Running;
             if ( parms?.DnsActions != null )
             {
+                bool subTaskNoError = true;
                 foreach ( DnsActionDetail request in parms.DnsActions )
                 {
-                    bool subTaskNoError = false;
                     try
                     {
-                        _subProgressMsg = "Verifying request parameters...\n";
+                        OnLogMessage( "Verifying request parameters...", LogLevel.Info );
+                        OnLogMessage( request.ToString(), LogLevel.Info );
                         if ( AreActionParametersValid( request ) )
                         {
-                            _subProgressMsg = _subProgressMsg + "Executing request" + (startInfo.IsDryRun ? " in dry run mode...\n" : "...\n");
+                            OnLogMessage( "Executing request" + (startInfo.IsDryRun ? " in dry run mode..." : "..."), LogLevel.Info );
                             subTaskNoError = ExecuteDnsActionsWithoutError( request, startInfo.IsDryRun );
                         }
                     }
                     catch ( Exception ex )
                     {
-                        _subProgressMsg = _subProgressMsg + ex.Message;
+                        OnLogMessage( ex.Message, LogLevel.Error );
                         subTaskNoError = false;
                     }
                     finally
@@ -106,29 +111,29 @@ public class DnsHandler : HandlerRuntimeBase
                             Hostname = request.Hostname,
                             IpAddress = request.IpAddress,
                             ExitCode = subTaskNoError ? 0 : -1,
-                            Note = _subProgressMsg
+                            Note = _progressMsg
                         } );
                     }
                 }
+                _result.Status = subTaskNoError ? StatusType.Complete : StatusType.CompletedWithErrors;
             }
             else
             {
-                _result.Status = StatusType.None;
-                _mainProgressMsg = $"{_mainProgressMsg}No DNS action is found from the incoming request.";
+                _result.Status = StatusType.Failed;
+                OnLogMessage( "No DNS action is found from the incoming request.", LogLevel.Warn );
             }
         }
         catch ( Exception ex )
         {
             exception = ex;
-            _mainProgressMsg = $"{_mainProgressMsg}DNS request execution has been aborted due to: {ex.Message}";
+            OnLogMessage( "DNS request execution has been aborted due to: {ex.Message}", LogLevel.Error );
             _result.Status = StatusType.Failed;
         }
 
-        response.Status = _mainProgressMsg;
         _result.ExitData = JsonConvert.SerializeObject( response );
 
         // Final runtime notification, return sequence=Int32.MaxValue by convention to supercede any other status message
-        OnProgress( context, _mainProgressMsg, _result.Status, sequence: int.MaxValue, ex: exception );
+        OnProgress( context, _progressMsg, _result.Status, sequence: int.MaxValue, ex: exception );
 
         return _result;
     }
@@ -139,27 +144,27 @@ public class DnsHandler : HandlerRuntimeBase
 
         if ( string.IsNullOrWhiteSpace( request.Action ) || request.Action.ToLower() != "add" && request.Action.ToLower() != "delete" )
         {
-            _subProgressMsg = _subProgressMsg + "Allowed action type is 'delete' only.\n";
+            OnLogMessage( "Allowed action type is 'add' or 'delete' only.", LogLevel.Error );
             areValid = false;
         }
-        else if ( string.IsNullOrWhiteSpace( request.RecordType ) || request.RecordType.ToLower() != "atype" && request.Action.ToLower() != "ptrtype" )
+        else if ( string.IsNullOrWhiteSpace( request.RecordType ) || request.RecordType.ToLower() != "atype" && request.RecordType.ToLower() != "ptrtype" )
         {
-            _subProgressMsg = _subProgressMsg + "Allowed record types are 'AType' or 'PTRType' only.\n";
+            OnLogMessage( "Allowed record types are 'AType' or 'PTRType' only.", LogLevel.Error );
             areValid = false;
         }
         else if ( string.IsNullOrWhiteSpace( request.RequestOwner ) )
         {
-            _subProgressMsg = _subProgressMsg + "Request owner must be specified.\n";
+            OnLogMessage( "Request owner must be specified.", LogLevel.Error );
             areValid = false;
         }
         else if ( string.IsNullOrWhiteSpace( request.Note ) )
         {
-            _subProgressMsg = _subProgressMsg + "Request note must be specified.\n";
+            OnLogMessage( "Request note must be specified.", LogLevel.Error );
             areValid = false;
         }
         else if ( string.IsNullOrWhiteSpace( request.Hostname ) || string.IsNullOrWhiteSpace( request.IpAddress ) )
         {
-            _subProgressMsg = _subProgressMsg + "Both hostname and ip address must be specified.\n";
+            OnLogMessage( "Both hostname and ip address must be specified.", LogLevel.Error );
             areValid = false;
         }
 
@@ -172,37 +177,68 @@ public class DnsHandler : HandlerRuntimeBase
 
         if ( request.Action.ToLower() == "add" && request.RecordType.ToLower() == "atype" )
         {
-            _subProgressMsg = _subProgressMsg + "Adding type A DNS record...\n";
+            OnLogMessage( "Adding type A DNS record...", LogLevel.Info );
             DnsServices.CreateARecord( request.Hostname, request.IpAddress, "", _config.DnsServer, isDryRun );
-            _subProgressMsg = _subProgressMsg + "Operation is successful.";
+            OnLogMessage( "Operation is successful.", LogLevel.Info );
             noError = true;
         }
 
         if ( request.Action.ToLower() == "delete" && request.RecordType.ToLower() == "atype" )
         {
-            _subProgressMsg = _subProgressMsg + "Deleting type A DNS record...\n";
+            OnLogMessage( "Deleting type A DNS record and its associated PTR record...", LogLevel.Info );
             DnsServices.DeleteARecord( request.Hostname, request.IpAddress, _config.DnsServer, isDryRun );
-            _subProgressMsg = _subProgressMsg + "Operation is successful.";
+            _progressMsg = _progressMsg + "Operation is successful.";
             noError = true;
         }
 
         if ( request.Action.ToLower() == "add" && request.RecordType.ToLower() == "ptrtype" )
         {
-            _subProgressMsg = _subProgressMsg + "Adding type PTR DNS record...\n";
-            DnsServices.CreatePtrRecord( request.Hostname, request.IpAddress, "", _config.DnsServer, isDryRun );
-            _subProgressMsg = _subProgressMsg + "Operation is successful.";
+            OnLogMessage( "Adding type PTR DNS record...", LogLevel.Info );
+            DnsServices.CreatePtrRecord( request.Hostname, request.IpAddress, request.DnsZone, _config.DnsServer, isDryRun );
+            OnLogMessage( "Operation is successful.", LogLevel.Info );
             noError = true;
 
         }
 
         if ( request.Action.ToLower() == "delete" && request.RecordType.ToLower() == "ptrtype" )
         {
-            _subProgressMsg = _subProgressMsg + "Deleting type A DNS record...\n";
+            OnLogMessage( "Deleting type PTR DNS record...", LogLevel.Info );
             DnsServices.DeletePtrRecord( request.Hostname, request.IpAddress, _config.DnsServer, isDryRun );
-            _subProgressMsg = _subProgressMsg + "Operation is successful.";
+            OnLogMessage( "Operation is successful.", LogLevel.Info );
             noError = true;
         }
 
         return noError;
+    }
+
+    private void OnLogMessage(string message, LogLevel logLevel)
+    {
+        if ( string.IsNullOrWhiteSpace( message ) )
+        {
+            return;
+        }
+
+        if ( logLevel == LogLevel.Debug )
+        {
+            _logger.Debug( message );
+        }
+        else if ( logLevel == LogLevel.Error )
+        {
+            _logger.Error( message );
+        }
+        else if ( logLevel == LogLevel.Fatal )
+        {
+            _logger.Fatal( message );
+        }
+        else if ( logLevel == LogLevel.Warn )
+        {
+            _logger.Warn( message );
+        }
+        else if ( logLevel == LogLevel.Info )
+        {
+            _logger.Info( message );
+        }
+
+        _progressMsg = _progressMsg + "\n" + message;
     }
 }
