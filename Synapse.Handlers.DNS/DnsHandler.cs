@@ -3,13 +3,10 @@ using Synapse.Core;
 using Synapse.Dns.Core;
 using System;
 using System.Collections.Generic;
-using NLog;
 using Synapse.Handlers.DNS;
-using LogLevel = NLog.LogLevel;
 
 public class DnsHandler : HandlerRuntimeBase
 {
-    private static Logger _logger = LogManager.GetCurrentClassLogger();
     private DnsHandlerConfig _config;
     private readonly ExecuteResult _result = new ExecuteResult()
     {
@@ -17,7 +14,8 @@ public class DnsHandler : HandlerRuntimeBase
         BranchStatus = StatusType.None,
         Sequence = int.MaxValue
     };
-    private string _progressMsg = "";
+    private string _mainProgressMsg = "";
+    private string _subProgressMsg = "";
 
     public override object GetConfigInstance()
     {
@@ -66,9 +64,8 @@ public class DnsHandler : HandlerRuntimeBase
 
     public override ExecuteResult Execute(HandlerStartInfo startInfo)
     {
+        int sequenceNumber = 0;
         string context = "Execute";
-
-        Exception exception = null;
         DnsResponse response = new DnsResponse
         {
             Results = new List<ActionResult>()
@@ -77,30 +74,43 @@ public class DnsHandler : HandlerRuntimeBase
 
         try
         {
-            OnLogMessage( "Deserializing incoming request...", LogLevel.Info );
+            _mainProgressMsg = "Deserializing incoming request...";
             _result.Status = StatusType.Initializing;
+            ++sequenceNumber;
+            OnProgress( context, _mainProgressMsg, _result.Status, sequenceNumber );
             DnsRequest parms = DeserializeOrNew<DnsRequest>( startInfo.Parameters );
 
+            _mainProgressMsg = "Processing individual child request...";
             _result.Status = StatusType.Running;
+            ++sequenceNumber;
+            OnProgress( context, _mainProgressMsg, _result.Status, sequenceNumber );
+
             if ( parms?.DnsActions != null )
             {
-                bool subTaskNoError = true;
                 foreach ( DnsActionDetail request in parms.DnsActions )
                 {
+                    bool subTaskSucceed = false;
                     try
                     {
-                        OnLogMessage( "Verifying request parameters...", LogLevel.Info, true );
-                        OnLogMessage( request.ToString(), LogLevel.Info );
-                        if ( AreActionParametersValid( request ) )
+                        _subProgressMsg = "Verifying child request parameters...";
+                        OnLogMessage( context, _subProgressMsg );
+                        OnLogMessage( context, request.ToString() );
+
+                        if ( ValidateActionParameters( request ) )
                         {
-                            OnLogMessage( "Executing request" + (startInfo.IsDryRun ? " in dry run mode..." : "..."), LogLevel.Info );
-                            subTaskNoError = ExecuteDnsActionsWithoutError( request, startInfo.IsDryRun );
+                            _subProgressMsg = "Executing request" + (startInfo.IsDryRun ? " in dry run mode..." : "...");
+                            OnLogMessage( context, _subProgressMsg );
+                            subTaskSucceed = ExecuteDnsActions( request, startInfo.IsDryRun );
+
+                            _subProgressMsg = "Processed child request" + (subTaskSucceed ? "." : " with error.");
+                            OnLogMessage( context, _subProgressMsg );
                         }
                     }
                     catch ( Exception ex )
                     {
-                        OnLogMessage( ex.Message, LogLevel.Error );
-                        subTaskNoError = false;
+                        _subProgressMsg = ex.Message;
+                        OnLogMessage( context, _subProgressMsg );
+                        subTaskSucceed = false;
                     }
                     finally
                     {
@@ -110,140 +120,107 @@ public class DnsHandler : HandlerRuntimeBase
                             RecordType = request.RecordType,
                             Hostname = request.Hostname,
                             IpAddress = request.IpAddress,
-                            ExitCode = subTaskNoError ? 0 : -1,
-                            Note = _progressMsg
+                            ExitCode = subTaskSucceed ? 0 : -1,
+                            Note = _subProgressMsg
                         } );
                     }
                 }
-                _result.Status = subTaskNoError ? StatusType.Complete : StatusType.CompletedWithErrors;
+                _result.Status = StatusType.Complete;
             }
             else
             {
                 _result.Status = StatusType.Failed;
-                OnLogMessage( "No DNS action is found from the incoming request.", LogLevel.Warn );
+                _mainProgressMsg = "No DNS action is found from the incoming request.";
+                OnLogMessage( context, _mainProgressMsg, LogLevel.Error );
             }
         }
         catch ( Exception ex )
         {
-            exception = ex;
-            OnLogMessage( "DNS request execution has been aborted due to: {ex.Message}", LogLevel.Error );
             _result.Status = StatusType.Failed;
+            _mainProgressMsg = $"Execution has been aborted due to: {ex.Message}";
+            OnLogMessage( context, _mainProgressMsg, LogLevel.Error );
         }
 
+        _mainProgressMsg = startInfo.IsDryRun ? "Dry run execution is completed." : "Execution is completed.";
+        response.Summary = _mainProgressMsg;
         _result.ExitData = JsonConvert.SerializeObject( response );
 
-        // Final runtime notification, return sequence=Int32.MaxValue by convention to supercede any other status message
-        OnProgress( context, _progressMsg, _result.Status, sequence: int.MaxValue, ex: exception );
+
+        OnProgress( context, _mainProgressMsg, _result.Status, int.MaxValue );
 
         return _result;
     }
 
-    public bool AreActionParametersValid(DnsActionDetail request)
+    public bool ValidateActionParameters(DnsActionDetail request)
     {
         bool areValid = true;
 
         if ( string.IsNullOrWhiteSpace( request.Action ) || request.Action.ToLower() != "add" && request.Action.ToLower() != "delete" )
         {
-            OnLogMessage( "Allowed action type is 'add' or 'delete' only.", LogLevel.Error );
+            OnLogMessage( "Execute", "Allowed action type is 'add' or 'delete' only.", LogLevel.Error );
             areValid = false;
         }
         else if ( string.IsNullOrWhiteSpace( request.RecordType ) || request.RecordType.ToLower() != "atype" && request.RecordType.ToLower() != "ptrtype" )
         {
-            OnLogMessage( "Allowed record types are 'AType' or 'PTRType' only.", LogLevel.Error );
+            OnLogMessage( "Execute", "Allowed record types are 'AType' or 'PTRType' only.", LogLevel.Error );
             areValid = false;
         }
         else if ( string.IsNullOrWhiteSpace( request.RequestOwner ) )
         {
-            OnLogMessage( "Request owner must be specified.", LogLevel.Error );
+            OnLogMessage( "Execute", "Request owner must be specified.", LogLevel.Error );
             areValid = false;
         }
         else if ( string.IsNullOrWhiteSpace( request.Note ) )
         {
-            OnLogMessage( "Request note must be specified.", LogLevel.Error );
+            OnLogMessage( "Execute", "Request note must be specified.", LogLevel.Error );
             areValid = false;
         }
         else if ( string.IsNullOrWhiteSpace( request.Hostname ) || string.IsNullOrWhiteSpace( request.IpAddress ) )
         {
-            OnLogMessage( "Both hostname and ip address must be specified.", LogLevel.Error );
+            OnLogMessage( "Execute", "Both hostname and ip address must be specified.", LogLevel.Error );
             areValid = false;
         }
 
         return areValid;
     }
 
-    public bool ExecuteDnsActionsWithoutError(DnsActionDetail request, bool isDryRun = false)
+    public bool ExecuteDnsActions(DnsActionDetail request, bool isDryRun = false)
     {
         bool noError = false;
 
         if ( request.Action.ToLower() == "add" && request.RecordType.ToLower() == "atype" )
         {
-            OnLogMessage( "Adding type A DNS record...", LogLevel.Info );
+            OnLogMessage( "Execute", "Adding type A DNS record..." );
             DnsServices.CreateARecord( request.Hostname, request.IpAddress, "", _config.DnsServer, isDryRun );
-            OnLogMessage( "Operation is successful.", LogLevel.Info );
+            OnLogMessage( "Execute", "Operation is successful." );
             noError = true;
         }
 
         if ( request.Action.ToLower() == "delete" && request.RecordType.ToLower() == "atype" )
         {
-            OnLogMessage( "Deleting type A DNS record and its associated PTR record...", LogLevel.Info );
+            OnLogMessage( "Execute", "Deleting type A DNS record and its associated PTR record..." );
             DnsServices.DeleteARecord( request.Hostname, request.IpAddress, _config.DnsServer, isDryRun );
-            _progressMsg = _progressMsg + "Operation is successful.";
+            OnLogMessage( "Execute", "Operation is successful." );
             noError = true;
         }
 
         if ( request.Action.ToLower() == "add" && request.RecordType.ToLower() == "ptrtype" )
         {
-            OnLogMessage( "Adding type PTR DNS record...", LogLevel.Info );
+            OnLogMessage( "Execute", "Adding type PTR DNS record..." );
             DnsServices.CreatePtrRecord( request.Hostname, request.IpAddress, request.DnsZone, _config.DnsServer, isDryRun );
-            OnLogMessage( "Operation is successful.", LogLevel.Info );
+            OnLogMessage( "Execute", "Operation is successful." );
             noError = true;
 
         }
 
         if ( request.Action.ToLower() == "delete" && request.RecordType.ToLower() == "ptrtype" )
         {
-            OnLogMessage( "Deleting type PTR DNS record...", LogLevel.Info );
+            OnLogMessage( "Execute", "Deleting type PTR DNS record..." );
             DnsServices.DeletePtrRecord( request.Hostname, request.IpAddress, _config.DnsServer, isDryRun );
-            OnLogMessage( "Operation is successful.", LogLevel.Info );
+            OnLogMessage( "Execute", "Operation is successful." );
             noError = true;
         }
 
         return noError;
-    }
-
-    private void OnLogMessage(string message, LogLevel logLevel, bool resetMessage = false)
-    {
-        if ( string.IsNullOrWhiteSpace( message ) )
-        {
-            return;
-        }
-
-        if ( resetMessage )
-        {
-            _progressMsg = "";
-        }
-
-        if ( logLevel == LogLevel.Debug )
-        {
-            _logger.Debug( message );
-        }
-        else if ( logLevel == LogLevel.Error )
-        {
-            _logger.Error( message );
-        }
-        else if ( logLevel == LogLevel.Fatal )
-        {
-            _logger.Fatal( message );
-        }
-        else if ( logLevel == LogLevel.Warn )
-        {
-            _logger.Warn( message );
-        }
-        else if ( logLevel == LogLevel.Info )
-        {
-            _logger.Info( message );
-        }
-
-        _progressMsg = _progressMsg + "\n" + message;
     }
 }
