@@ -116,6 +116,16 @@ namespace Synapse.Dns.Core
                 throw new Exception( "Fully qualified host name is not specified." );
             }
 
+            if ( string.IsNullOrWhiteSpace( ipAddress ) )
+            {
+                throw new Exception( "IP address is not specified." );
+            }
+
+            if ( string.IsNullOrWhiteSpace( dnsServerName ) )
+            {
+                throw new Exception( "DNS server name is not specified." );
+            }
+
             try
             {
                 ObjectQuery query = new ObjectQuery( $"SELECT * FROM MicrosoftDNS_AType WHERE OwnerName = '{hostname}' AND IPAddress = '{ipAddress}'" );

@@ -58,8 +58,15 @@ public class DnsHandler : HandlerRuntimeBase
 
     public override IHandlerRuntime Initialize(string values)
     {
-        //deserialize the Config from the Handler declaration
-        _config = DeserializeOrNew<DnsHandlerConfig>( values );
+        try
+        {
+            _config = DeserializeOrNew<DnsHandlerConfig>( values ) ?? new DnsHandlerConfig();
+        }
+        catch ( Exception ex )
+        {
+            OnLogMessage( "Initialization", "Encountered exception while deserializing handler config.", LogLevel.Error, ex );
+        }
+
         return this;
     }
 
@@ -71,7 +78,6 @@ public class DnsHandler : HandlerRuntimeBase
         {
             Results = new List<ActionResult>()
         };
-
 
         try
         {
@@ -103,8 +109,7 @@ public class DnsHandler : HandlerRuntimeBase
                             _subProgressMsg = "Executing request" + (startInfo.IsDryRun ? " in dry run mode..." : "...");
                             OnLogMessage( context, _subProgressMsg );
                             subTaskSucceed = ExecuteDnsActions( request, startInfo.IsDryRun );
-
-                            _subProgressMsg = "Processed child request" + (subTaskSucceed ? "." : " with error.");
+                            _subProgressMsg = "Processed child request.";
                             OnLogMessage( context, _subProgressMsg );
                         }
                     }
@@ -146,7 +151,6 @@ public class DnsHandler : HandlerRuntimeBase
         _mainProgressMsg = startInfo.IsDryRun ? "Dry run execution is completed." : "Execution is completed.";
         response.Summary = _mainProgressMsg;
         _result.ExitData = JsonConvert.SerializeObject( response );
-
 
         OnProgress( context, _mainProgressMsg, _result.Status, int.MaxValue );
 
