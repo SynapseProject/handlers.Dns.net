@@ -3,6 +3,7 @@ using Synapse.Core;
 using Synapse.Dns.Core;
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using Synapse.Handlers.DNS;
 
 public class DnsHandler : HandlerRuntimeBase
@@ -78,7 +79,8 @@ public class DnsHandler : HandlerRuntimeBase
             _result.Status = StatusType.Initializing;
             ++sequenceNumber;
             OnProgress( context, _mainProgressMsg, _result.Status, sequenceNumber );
-            DnsRequest parms = DeserializeOrNew<DnsRequest>( startInfo.Parameters );
+            string inputParameters = RemoveParameterSingleQuote( startInfo.Parameters );
+            DnsRequest parms = DeserializeOrNew<DnsRequest>( inputParameters );
 
             _mainProgressMsg = "Processing individual child request...";
             _result.Status = StatusType.Running;
@@ -222,5 +224,18 @@ public class DnsHandler : HandlerRuntimeBase
         }
 
         return noError;
+    }
+
+    private static string RemoveParameterSingleQuote(string input)
+    {
+        string output = "";
+        if ( !string.IsNullOrWhiteSpace( input ) )
+        {
+            Regex pattern = new Regex( ":\\s*'" );
+            output = pattern.Replace( input, ": " );
+            pattern = new Regex( "'\\s*(\r\n|\r|\n|$)" );
+            output = pattern.Replace( output, Environment.NewLine );
+        }
+        return output;
     }
 }
