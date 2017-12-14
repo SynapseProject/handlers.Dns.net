@@ -55,6 +55,7 @@
     <Compile Include="DnsHandlerConfig.cs" />
     <Compile Include="DnsRequest.cs" />
     <Compile Include="DnsResponse.cs" />
+    <Compile Include="DnsServer.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

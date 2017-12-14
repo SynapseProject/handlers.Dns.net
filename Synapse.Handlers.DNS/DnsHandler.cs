@@ -3,8 +3,8 @@ using Synapse.Core;
 using Synapse.Dns.Core;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
-using Synapse.Handlers.DNS;
 
 public class DnsHandler : HandlerRuntimeBase
 {
@@ -22,10 +22,13 @@ public class DnsHandler : HandlerRuntimeBase
     {
         return new DnsHandlerConfig()
         {
-            DnsServer = "."
+            DnsServers = new List<DnsServer>()
+            {
+                new DnsServer() { DomainSuffix = "xxx.com", ServerName = "abc.xxx.com" },
+                new DnsServer() { DomainSuffix = "yyy.com", ServerName = "def.yyy.com" }
+            }
         };
     }
-
 
     public override object GetParametersInstance()
     {
@@ -108,7 +111,7 @@ public class DnsHandler : HandlerRuntimeBase
                         {
                             _subProgressMsg = "Executing request" + (startInfo.IsDryRun ? " in dry run mode..." : "...");
                             OnLogMessage( context, _subProgressMsg );
-                            subTaskSucceed = ExecuteDnsActions( request, startInfo.IsDryRun );
+                            subTaskSucceed = ExecuteDnsActions( request, _config, startInfo.IsDryRun );
                             _subProgressMsg = "Processed child request.";
                             OnLogMessage( context, _subProgressMsg );
                         }
@@ -190,44 +193,87 @@ public class DnsHandler : HandlerRuntimeBase
         return areValid;
     }
 
-    public bool ExecuteDnsActions(DnsActionDetail request, bool isDryRun = false)
+    public bool ExecuteDnsActions(DnsActionDetail request, DnsHandlerConfig config, bool isDryRun = false)
     {
-        bool noError = false;
+        if ( request == null || config == null ) return false;
 
+        string domainSuffix = GetDomainSuffix( request.Hostname );
+        if (string.IsNullOrWhiteSpace(domainSuffix))
+            throw new Exception($"Domain suffix {domainSuffix} is not valid.");
+
+        string dnsServer = GetDnsServer( config, domainSuffix );
+        if (string.IsNullOrWhiteSpace(dnsServer))
+            throw new Exception($"Unable to find a matching DNS server for domain suffix {domainSuffix}.");
+
+        bool isSuccess = false;
         if ( request.Action.ToLower() == "add" && request.RecordType.ToLower() == "atype" )
         {
             OnLogMessage( "Execute", "Adding type A DNS record..." );
-            DnsServices.CreateARecord( request.Hostname, request.IpAddress, "", _config.DnsServer, isDryRun );
+            DnsServices.CreateARecord( request.Hostname, request.IpAddress, "", dnsServer, isDryRun );
             OnLogMessage( "Execute", "Operation is successful." );
-            noError = true;
+            isSuccess = true;
         }
 
         if ( request.Action.ToLower() == "delete" && request.RecordType.ToLower() == "atype" )
         {
             OnLogMessage( "Execute", "Deleting type A DNS record and its associated PTR record..." );
-            DnsServices.DeleteARecord( request.Hostname, request.IpAddress, _config.DnsServer, isDryRun );
+            DnsServices.DeleteARecord( request.Hostname, request.IpAddress, dnsServer, isDryRun );
             OnLogMessage( "Execute", "Operation is successful." );
-            noError = true;
+            isSuccess = true;
         }
 
         if ( request.Action.ToLower() == "add" && request.RecordType.ToLower() == "ptrtype" )
         {
             OnLogMessage( "Execute", "Adding type PTR DNS record..." );
-            DnsServices.CreatePtrRecord( request.Hostname, request.IpAddress, request.DnsZone, _config.DnsServer, isDryRun );
+            DnsServices.CreatePtrRecord( request.Hostname, request.IpAddress, request.DnsZone, dnsServer, isDryRun );
             OnLogMessage( "Execute", "Operation is successful." );
-            noError = true;
-
+            isSuccess = true;
         }
 
         if ( request.Action.ToLower() == "delete" && request.RecordType.ToLower() == "ptrtype" )
         {
             OnLogMessage( "Execute", "Deleting type PTR DNS record..." );
-            DnsServices.DeletePtrRecord( request.Hostname, request.IpAddress, _config.DnsServer, isDryRun );
+            DnsServices.DeletePtrRecord( request.Hostname, request.IpAddress, dnsServer, isDryRun );
             OnLogMessage( "Execute", "Operation is successful." );
-            noError = true;
+            isSuccess = true;
         }
 
-        return noError;
+        return isSuccess;
+    }
+
+    #region Utility Methods
+
+    public string GetDomainSuffix(string serverName)
+    {
+        string domainSuffix = "";
+
+        if ( !string.IsNullOrWhiteSpace( serverName ) )
+        {
+            int idx = serverName.IndexOf( '.' );
+            if ( idx != -1 )
+            {
+                domainSuffix = serverName.Substring( idx + 1 );
+            }
+        }
+        return domainSuffix;
+    }
+
+    public string GetDnsServer(DnsHandlerConfig config, string domainSuffix)
+    {
+        string dnsServer = "";
+
+        if ( config?.DnsServers != null && !string.IsNullOrWhiteSpace( domainSuffix ) )
+        {
+            foreach ( DnsServer ds in config.DnsServers )
+            {
+                if ( string.Compare( ds.DomainSuffix, domainSuffix, StringComparison.OrdinalIgnoreCase ) == 0 )
+                {
+                    dnsServer = ds.ServerName;
+                    break;
+                }
+            }
+        }
+        return dnsServer;
     }
 
     private static string RemoveParameterSingleQuote(string input)
@@ -242,4 +288,5 @@ public class DnsHandler : HandlerRuntimeBase
         }
         return output;
     }
+    #endregion
 }

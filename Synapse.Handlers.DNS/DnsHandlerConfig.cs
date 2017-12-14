@@ -1,10 +1,6 @@
-﻿using System.Xml.Serialization;
+﻿using System.Collections.Generic;
 
-namespace Synapse.Handlers.DNS
+public class DnsHandlerConfig
 {
-    public class DnsHandlerConfig
-    {
-        [XmlElement]
-        public string DnsServer { get; set; }
-    }
+    public List<DnsServer> DnsServers { get; set; }
 }
