@@ -88,8 +88,9 @@ public class DnsHandler : HandlerRuntimeBase
             _result.Status = StatusType.Initializing;
             ++sequenceNumber;
             OnProgress( context, _mainProgressMsg, _result.Status, sequenceNumber );
-            string inputParameters = RemoveParameterSingleQuote( startInfo.Parameters );
-            DnsRequest parms = DeserializeOrNew<DnsRequest>( inputParameters );
+            OnLogMessage( context, _subProgressMsg );
+            DnsRequest parms = DeserializeOrNew<DnsRequest>( startInfo.Parameters );
+
 
             _mainProgressMsg = "Processing individual child request...";
             _result.Status = StatusType.Running;
@@ -198,12 +199,12 @@ public class DnsHandler : HandlerRuntimeBase
         if ( request == null || config == null ) return false;
 
         string domainSuffix = GetDomainSuffix( request.Hostname );
-        if (string.IsNullOrWhiteSpace(domainSuffix))
-            throw new Exception($"Domain suffix {domainSuffix} is not valid.");
+        if ( string.IsNullOrWhiteSpace( domainSuffix ) )
+            throw new Exception( $"Domain suffix {domainSuffix} is not valid." );
 
         string dnsServer = GetDnsServer( config, domainSuffix );
-        if (string.IsNullOrWhiteSpace(dnsServer))
-            throw new Exception($"Unable to find a matching DNS server for domain suffix {domainSuffix}.");
+        if ( string.IsNullOrWhiteSpace( dnsServer ) )
+            throw new Exception( $"Unable to find a matching DNS server for domain suffix {domainSuffix}." );
 
         bool isSuccess = false;
         if ( request.Action.ToLower() == "add" && request.RecordType.ToLower() == "atype" )
